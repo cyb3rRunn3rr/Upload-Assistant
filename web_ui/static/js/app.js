@@ -15,6 +15,11 @@ const APPLICATION_RAIL_WIDTH = 80;
 const LEFT_SIDEBAR_MAX_WIDTH = 600;
 const RIGHT_SIDEBAR_MAX_WIDTH = 800;
 const COMPACT_LAYOUT_BREAKPOINT = 768;
+const OUTPUT_BOTTOM_THRESHOLD = 24;
+
+const isOutputNearBottom = (container) =>
+  container.scrollHeight - container.scrollTop - container.clientHeight <=
+  OUTPUT_BOTTOM_THRESHOLD;
 
 const isMobileBrowserSession = () => {
   const clientHint = navigator.userAgentData?.mobile;
@@ -2205,6 +2210,7 @@ function AudionutsUAGUI() {
   const [descLinkFocused, setDescLinkFocused] = useState(false);
 
   const richOutputRef = useRef(null);
+  const outputAutoScrollRef = useRef(true);
   const lastFullHashRef = useRef("");
   const inputRef = useRef(null);
   const isSendingInputRef = useRef(false);
@@ -3290,17 +3296,30 @@ function AudionutsUAGUI() {
     setCustomArgs((prev) => updateArgValue(prev, "--desclink", url));
   };
 
+  const scrollOutputToBottom = useCallback((force = false) => {
+    const container = richOutputRef.current;
+    if (!container || (!force && !outputAutoScrollRef.current)) return;
+
+    requestAnimationFrame(() => {
+      const currentContainer = richOutputRef.current;
+      if (!currentContainer || (!force && !outputAutoScrollRef.current)) {
+        return;
+      }
+      currentContainer.scrollTop = currentContainer.scrollHeight;
+      outputAutoScrollRef.current = true;
+    });
+  }, []);
+
+  const handleOutputScroll = useCallback((event) => {
+    outputAutoScrollRef.current = isOutputNearBottom(event.currentTarget);
+  }, []);
+
   const appendHtmlFragment = (rawHtml) => {
     const container = richOutputRef.current;
     if (container) {
       const wrapper = createUploadOutputFragment((rawHtml || "").trim());
       container.appendChild(wrapper);
-      // Use scrollIntoView to avoid clipping of the last line
-      setTimeout(() => {
-        const last = container.lastElementChild;
-        if (last && last.scrollIntoView) last.scrollIntoView({ block: "end" });
-        else container.scrollTop = container.scrollHeight;
-      }, 0);
+      scrollOutputToBottom();
     }
   };
 
@@ -3315,12 +3334,7 @@ function AudionutsUAGUI() {
     el.style.whiteSpace = "pre-wrap";
     el.textContent = text;
     rootContainer.appendChild(el);
-    // ensure fully visible
-    setTimeout(() => {
-      const last = rootContainer.lastElementChild;
-      if (last && last.scrollIntoView) last.scrollIntoView({ block: "end" });
-      else rootContainer.scrollTop = rootContainer.scrollHeight;
-    }, 0);
+    scrollOutputToBottom();
   };
 
   const sendInput = async (session_id, input) => {
@@ -4663,14 +4677,7 @@ function AudionutsUAGUI() {
                   lastFullHashRef.current = key;
                   const wrapper = createUploadOutputFragment(clean);
                   if (rootContainer) rootContainer.appendChild(wrapper);
-                  setTimeout(() => {
-                    const last =
-                      rootContainer && rootContainer.lastElementChild;
-                    if (last && last.scrollIntoView)
-                      last.scrollIntoView({ block: "end" });
-                    else if (rootContainer)
-                      rootContainer.scrollTop = rootContainer.scrollHeight;
-                  }, 0);
+                  scrollOutputToBottom();
                 }
                 return;
               }
@@ -4756,6 +4763,7 @@ function AudionutsUAGUI() {
       const rootContainer = richOutputRef.current;
       if (rootContainer) {
         rootContainer.innerHTML = "";
+        outputAutoScrollRef.current = true;
       }
 
       try {
@@ -4813,6 +4821,7 @@ function AudionutsUAGUI() {
     setIsExecuting(true);
     if (rootContainer) {
       rootContainer.innerHTML = "";
+      outputAutoScrollRef.current = true;
     }
 
     const newSessionId = "session_" + Date.now();
@@ -4854,6 +4863,7 @@ function AudionutsUAGUI() {
     const container = richOutputRef.current;
     if (container) {
       container.innerHTML = "";
+      outputAutoScrollRef.current = true;
       setProgressItems([]);
       appendSystemMessage("Upload-Assistant Interactive Output");
       appendSystemMessage(
@@ -6044,6 +6054,10 @@ function AudionutsUAGUI() {
     isAwaitingTerminalInput && executionPreview?.input_type === "yes_no",
   );
 
+  useEffect(() => {
+    if (isAwaitingTerminalInput) scrollOutputToBottom(true);
+  }, [isAwaitingTerminalInput, scrollOutputToBottom]);
+
   // Mobile Layout
   if (isMobile) {
     const navButton = (panel, icon, label) => (
@@ -6465,6 +6479,7 @@ function AudionutsUAGUI() {
               <div
                 ref={richOutputRef}
                 id="rich-output"
+                onScroll={handleOutputScroll}
                 className={`rounded-lg overflow-auto p-2 border text-sm bg-black border-gray-700 text-white ${isExecuting || isOutputExpanded ? "flex-1" : "hidden"}`}
               ></div>
               {isExecuting && (
@@ -7336,6 +7351,7 @@ function AudionutsUAGUI() {
                 <div
                   ref={richOutputRef}
                   id="rich-output"
+                  onScroll={handleOutputScroll}
                   className={`rounded-lg overflow-auto p-3 border bg-black border-gray-700 text-white ${isExecuting || isOutputExpanded ? "flex-1" : "hidden"}`}
                 ></div>
                 {isExecuting && (

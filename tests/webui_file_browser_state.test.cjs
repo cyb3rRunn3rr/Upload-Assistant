@@ -49,6 +49,8 @@ for (const n of [
   "FILE_BROWSER_EXPANDED_KEY",
   "FILE_BROWSER_SCROLL_KEY",
   "FILE_BROWSER_SORT_KEY",
+  "OUTPUT_BOTTOM_THRESHOLD",
+  "isOutputNearBottom",
   "getStoredExpandedFolders",
   "sortFolderPathsByDepth",
   "getFileBrowserRestorePaths",
@@ -56,6 +58,17 @@ for (const n of [
 ])
   load(n);
 const plain = (value) => JSON.parse(JSON.stringify(value));
+test("execution output only follows content while the viewport is near the bottom", () => {
+  const viewport = { scrollHeight: 1000, clientHeight: 300, scrollTop: 700 };
+  assert.equal(context.isOutputNearBottom(viewport), true);
+
+  viewport.scrollTop = 676;
+  assert.equal(context.isOutputNearBottom(viewport), true);
+
+  viewport.scrollTop = 675;
+  assert.equal(context.isOutputNearBottom(viewport), false);
+});
+
 test("file-browser persistence, restoration, refresh and execution outcomes", async () => {
   assert.equal(context.getStoredExpandedFolders().size, 0);
   for (const v of ["bad", "{}", "null"]) {
