@@ -35,6 +35,11 @@ docs
 tmp
 *.torrent
 *.log
+data/config.py
+data/config*
+data/cookies
+data/cache
+data/*.json
 
 # OS junk
 Thumbs.db
