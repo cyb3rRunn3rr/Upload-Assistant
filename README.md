@@ -378,6 +378,7 @@ uv tool install --force git+https://github.com/wastaken7/Upload-Assistant.git
 | <img src="web_ui/static/img/trackers/racing4everyone.png" width="16" height="16" />           | Racing4Everyone        | RACING4EVERYONE        | MOVIE, TV                    |
 | <img src="web_ui/static/img/trackers/railgunpt.png" width="16" height="16" />                 | RailgunPT              | RAILGUNPT              | MOVIE, TV                    |
 | <img src="web_ui/static/img/trackers/rastastugan.png" width="16" height="16" />               | Rastastugan            | RASTASTUGAN            | MOVIE, TV, BOOK, GAME, MUSIC |
+| <img src="web_ui/static/img/trackers/redacted.png" width="16" height="16" />                  | Redacted               | REDACTED               | MUSIC                        |
 | <img src="web_ui/static/img/trackers/reelflix.png" width="16" height="16" />                  | ReelFLiX               | REELFLIX               | MOVIE                        |
 | <img src="web_ui/static/img/trackers/retroflix.png" width="16" height="16" />                 | RetroFlix              | RETROFLIX              | MOVIE, TV                    |
 | <img src="web_ui/static/img/trackers/retromoviesclub.png" alt="" width="16" height="16" />    | Retro Movies Club      | RETROMOVIESCLUB        | MOVIE                        |

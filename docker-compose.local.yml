@@ -1,0 +1,32 @@
+# WebUI for this fork. The published ghcr image does not include Redacted or sox.
+# From this directory: docker compose -f docker-compose.local.yml up -d --build
+# First start writes /state/data/config.py from the bundled example.
+# Fill TRACKERS.REDACTED api_key and announce_url there. Do not commit that file.
+
+services:
+  upload-assistant:
+    build: .
+    image: upload-assistant-red:local
+    container_name: upload-assistant
+    restart: unless-stopped
+    command: ["--webui", "0.0.0.0:5000"]
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UA_BROWSE_ROOTS=/data/music,/state/tmp
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - /home/me/StreamripDownloads:/data/music:rw
+      - /home/me/Upload-Assistant-state:/state:rw
+      - /home/me/.local/share/qBittorrent/BT_backup:/torrent_storage_dir:rw
+      - /home/me/Upload-Assistant-state/webui-auth:/root/.config/upload-assistant:rw
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/api/health"]
+      interval: 60s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

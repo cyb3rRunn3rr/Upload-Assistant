@@ -7,6 +7,7 @@ RUN apt-get update && \
     g++ \
     cargo \
     ffmpeg \
+    sox \
     rustc \
     nano \
     ca-certificates \

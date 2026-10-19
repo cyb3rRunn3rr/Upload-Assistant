@@ -564,7 +564,7 @@ config: dict[str, Any] = {
         #   IMMORTALSEED, INFINITYHD, IPTORRENTS, ITATORRENTS, LAJIDUI, LASTDIGITALUNDERGROUND, LATTEAM, LEMONHD, LOCADORA, LONGPT, LST,
         #   LUMINARR, MAKINGOFF, MIDNIGHTSCENE, MTEAM, NEBULANCE, NORDICQUALITY, NZBGEEK, NZBNEST, OLDTOONSWORLD, ONLYENCODES, ORPHEUS, PASSTHEPOPCORN,
         #   PEERGARDEN, POLISHTORRENT, PORTUGAS, PRIVATEHD, PTCAFE, PTERCLUB, PTFANS, PTGTK, PTSKIT, PTZONE, QINGWA, RACING4EVERYONE, RAILGUNPT,
-        #   RASTASTUGAN, REELFLIX, RETROFLIX, RETROMOVIESCLUB, ROCKETHD, SAMARITANO, SEEDPOOL, SHAREISLAND, SKIPTHECOMMERCIALS, SPEEDAPP,
+        #   RASTASTUGAN, REDACTED, REELFLIX, RETROFLIX, RETROMOVIESCLUB, ROCKETHD, SAMARITANO, SEEDPOOL, SHAREISLAND, SKIPTHECOMMERCIALS, SPEEDAPP,
         #   SUIO, SWARMAZON, THELEACHZONE, THEOLDSCHOOL, TORRENTEROS, TORRENTHR, TORRENTLEECH, TOTHEGLORY, TVCHAOSUK, ULCX, UTOPIA,
         #   XINGYUNGEPT, YUSCENE, ZENITH
         # This list is validated against the tracker blocks below by the test suite.
@@ -2760,6 +2760,16 @@ config: dict[str, Any] = {
             "use_bluray_images": True,
             "bluray_image_size": "",
             "add_audio_spectrogram": True,
+            "inject_delay": 0,
+        },
+        "REDACTED": {
+            "cli_alias": "RED",
+            # API key from the site settings. Torrents permission is required for upload. Do not commit a real key.
+            "api_key": "",
+            # Personal announce URL shown on https://redacted.sh/upload.php. The host is flacsfor.me.
+            "announce_url": "",
+            # One full SoX spectrogram and one zoomed spectrogram per audio file, uploaded to Redacted's image host.
+            "add_spectrograms": True,
             "inject_delay": 0,
         },
         "REELFLIX": {

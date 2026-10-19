@@ -26,6 +26,8 @@ class Orpheus:
     supported_categories = ("MUSIC",)
     source_flag = "OPS"
     base_url = "https://orpheus.network"
+    validator_cls = OrpheusMusicValidator
+    request_category = "1"
     release_types: ClassVar[dict[str, int]] = {
         "Album": 1,
         "Soundtrack": 3,
@@ -143,7 +145,7 @@ class Orpheus:
             *(f"blacklisted release {release_name}" for release_name in blocked_releases),
             *(f"blacklisted label {label}" for label in blocked_labels),
         ]
-        message = f"Upload blocked: Orpheus blacklist matched {', '.join(reasons)}."
+        message = f"Upload blocked: {self.display_name} blacklist matched {', '.join(reasons)}."
         status = meta.tracker_status.setdefault(self.tracker, {})
         status["status_message"] = message
         status["blocked_reasons"] = reasons
@@ -250,7 +252,7 @@ class Orpheus:
             "action": "requests",
             "search": album,
             "show_filled": "false",
-            "filter_cat[]": "1",
+            "filter_cat[]": self.request_category,
         }
         payload: dict[str, Any] = {}
         try:
@@ -361,7 +363,7 @@ class Orpheus:
         release = self._release(meta)
         if not await self.get_additional_checks(meta):
             return False
-        issues = OrpheusMusicValidator().validate(release)
+        issues = self.validator_cls().validate(release)
         errors = [issue.message for issue in issues if issue.level == ValidationLevel.ERROR]
         if errors:
             meta.tracker_status.setdefault(self.tracker, {})["status_message"] = "Validation failed: " + " | ".join(errors)

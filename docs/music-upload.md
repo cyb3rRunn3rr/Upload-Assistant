@@ -35,3 +35,9 @@ Orpheus's `image` field is optional, but artwork improves the catalog. MUSIC fir
 The preflight enforces mechanical rules (allowed format/container, FLAC bit depth/sample rate, MP3 CBR ceiling, technical hybrids, required artist/album and split-track evidence). It deliberately reports provenance-dependent questions—transcodes, official status, watermarking, edition correctness and source medium—as warnings for human review rather than claiming to prove them automatically.
 
 No API key, token or tracker response is written into the music snapshot or payload preview.
+
+## Redacted
+
+Configure `TRACKERS["REDACTED"]` with an API key that has the Torrents permission and the personal announce URL from the upload page. The announce host is `flacsfor.me`. Authorization sends the raw API key. The adapter follows the same read-only duplicate search and confirmation flow as Orpheus, then posts the Redacted form: initial year, required edition year, edition title, label and catalogue number, and the media and format values from that form.
+
+The cover is rehosted on Redacted's own image host (`ajax.php?action=upload_image`) when it is not already a `redacted.sh` or `redacted.ch` URL. With `add_spectrograms` left on, each audio file gets two SoX plots outside the album folder: the full Kaiser spectrogram and a two-second zoom starting at 1:00 (or at the start when the file is shorter). Those images are uploaded to the same host and linked in the release description. A missing `sox`, a plot failure, or an image-host failure is reported and does not cancel the upload. Debug mode does not call the image host.

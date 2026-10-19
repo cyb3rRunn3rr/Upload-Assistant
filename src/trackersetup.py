@@ -119,6 +119,7 @@ STATIC_AUTH_TYPES = {
     "OLDTOONSWORLD": "unit3d_api",
     "ONLYENCODES": "unit3d_api",
     "ORPHEUS": "other_api",
+    "REDACTED": "other_api",
     "PASSTHEPOPCORN": None,
     "PEERGARDEN": "unit3d_api",
     "POLISHTORRENT": "unit3d_api",
@@ -839,10 +840,10 @@ class TrackerSetup:
                 if not url:
                     return False
                 requests = await self.bhd_request_check(meta, tracker_name, url)
-            elif tracker_name.upper() in ("BJSHARE", "FUNFILE", "HDSPACE", "AVISTAZ", "CINEMAZ", "PRIVATEHD", "MTEAM", "ORPHEUS"):
+            elif tracker_name.upper() in ("BJSHARE", "FUNFILE", "HDSPACE", "AVISTAZ", "CINEMAZ", "PRIVATEHD", "MTEAM", "ORPHEUS", "REDACTED"):
                 # These trackers have custom request handling
                 requests = cast(list[JsonDict], await tracker_instance.get_requests(meta))
-                return bool(requests) if tracker_name.upper() == "ORPHEUS" else False
+                return bool(requests) if tracker_name.upper() in {"ORPHEUS", "REDACTED"} else False
             else:
                 if not url:
                     return False
@@ -1486,6 +1487,7 @@ tracker_class_map: Any = LazyTrackerDict(
         "RACING4EVERYONE": ("src.trackers.UNIT3D.racing4everyone", "Racing4Everyone"),
         "RAILGUNPT": ("src.trackers.NEXUSPHP.railgunpt", "RailgunPT"),
         "RASTASTUGAN": ("src.trackers.UNIT3D.rastastugan", "Rastastugan"),
+        "REDACTED": ("src.trackers.GAZELLE.redacted", "Redacted"),
         "REELFLIX": ("src.trackers.UNIT3D.reelflix", "ReelFlix"),
         "RETROFLIX": ("src.trackers.retroflix", "RetroFlix"),
         "RETROMOVIESCLUB": ("src.trackers.UNIT3D.retromoviesclub", "RetroMoviesClub"),
