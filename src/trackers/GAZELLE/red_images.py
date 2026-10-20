@@ -9,6 +9,20 @@ _HTTPS_URL = re.compile(r"https://[^\s\[\]\"'<>]+", re.IGNORECASE)
 _URL_KEYS = ("url", "link", "src", "image", "full", "bbcode")
 
 
+def authkey_from_index(payload: Any) -> str:
+    """Return the logged-in user's auth key from an ``action=index`` body.
+
+    The image host expects this value in the ``auth`` field. The passkey that
+    arrives in the same body is ignored and must not be logged.
+    """
+    if not isinstance(payload, dict) or payload.get("status") != "success":
+        return ""
+    response = payload.get("response")
+    if not isinstance(response, dict):
+        return ""
+    return str(response.get("authkey") or "").strip()
+
+
 def image_url_from_response(payload: Any) -> str:
     """Return the hosted HTTPS URL from a Redacted ``upload_image`` body.
 

@@ -54,21 +54,24 @@ def render_spectrogram(sox: str, source: Path, output: Path, *, zoom: tuple[str,
 
 
 def spectrogram_bbcode(rows: list[tuple[str, str, str]]) -> str:
-    """BBCode for release descriptions. Each row is title, full URL, zoom URL."""
+    """BBCode for release descriptions. Each row is title, full URL, zoom URL.
+
+    The plots sit in one hide. Each zoom has its own hide, so a long album
+    does not open as a wall of images.
+    """
     blocks: list[str] = []
     for title, full_url, zoom_url in rows:
-        images = [url for url in (full_url, zoom_url) if url]
-        if not images:
+        if not full_url and not zoom_url:
             continue
         lines = [f"[b]{_bbcode_text(title)}[/b]"]
         if full_url:
             lines.append(f"[img]{full_url}[/img]")
         if zoom_url:
-            lines.append(f"Zoom\n[img]{zoom_url}[/img]")
+            lines.append(f"[hide=Zoom]\n[img]{zoom_url}[/img]\n[/hide]")
         blocks.append("\n".join(lines))
     if not blocks:
         return ""
-    return "[b]Spectrograms[/b]\n\n" + "\n\n".join(blocks)
+    return "[hide=Spectrograms]\n" + "\n\n".join(blocks) + "\n[/hide]"
 
 
 def output_name(index: int, title: str, kind: str) -> str:

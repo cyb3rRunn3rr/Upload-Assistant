@@ -16,6 +16,7 @@ from src.cogs.redaction import PathAwareEncoder
 from src.console import logger
 from src.meta import Meta
 from src.music.analyzer import MusicReleaseAnalyzer
+from src.music.guests import GuestCreditEnricher
 from src.music.models import MetadataSource, MusicRelease
 from src.music.sources import DiscogsEnricher, MusicBrainzEnricher
 from src.music.validation import MusicValidator
@@ -270,6 +271,7 @@ async def gather_music_prep(meta: Meta, config: dict[str, Any]) -> None:
     enrichment_enabled = meta.music_enrichment if meta.music_enrichment is not None else default_config.get("music_enrichment_enabled", False)
     if enrichment_enabled:
         await MusicBrainzEnricher(base_dir=str(meta.base_dir or "")).enrich(release)
+        await GuestCreditEnricher(base_dir=str(meta.base_dir or "")).enrich(release)
     issues = MusicValidator().validate(release)
     release.warnings.extend(f"{issue.level}: {issue.message}" for issue in issues)
     _sync_release_to_meta(meta, release)
@@ -331,7 +333,9 @@ def _sync_release_to_meta(meta: Meta, release: MusicRelease) -> None:
     meta.year = int(release.get("year")) if str(release.get("year", "")).isdigit() else meta.year
     meta.format = str(release.get("format", meta.format))
     meta.source = str(release.get("media", meta.source or "")) or meta.source
-    meta.scene = bool(release.get("scene", meta.scene))
+    scene = release.fields.get("scene")
+    if scene is not None and scene.source == MetadataSource.USER:
+        meta.scene = bool(scene.value)
     meta.genres = list(release.get("genres", meta.genres)) if isinstance(release.get("genres", meta.genres), list) else meta.genres
     if meta.manual_genres:
         meta.genres = [genre.strip() for genre in meta.manual_genres.split(",") if genre.strip()]

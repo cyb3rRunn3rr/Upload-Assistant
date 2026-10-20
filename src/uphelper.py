@@ -21,6 +21,7 @@ from src.cogs.redaction import Redaction
 from src.config_helpers import format_terminal_link
 from src.console import logger, prompt_in_thread
 from src.meta import Meta
+from src.music.guests import format_guest_artists
 from src.prompt_sound import play_prompt_sound
 from src.slot_rules.models import SlotDecision, Verdict
 from src.trackersetup import tracker_class_map
@@ -126,6 +127,10 @@ def _music_confirmation_lines(meta: Meta, missing_warning: str) -> list[tuple[st
         ("Tracks / Discs", f"{track_count or _missing_with_hint(missing_warning, 'Check the music file list.')} / {disc_count or 1}"),
         ("Audio", technical or format_name or _missing_with_hint(missing_warning, "Check the audio file metadata.")),
     ]
+    guest_text = format_guest_artists(value("guest_artists"))
+    if guest_text:
+        provenance = source("guest_artists")
+        lines.insert(1, ("Guests", escape(guest_text) + (f" [dim]({provenance})[/dim]" if provenance else "")))
     lines.append(("Genre", genres or _optional_hint("Use --genres.")))
     if any((release_year, retail_date, release_label, release_catalogue)):
         release_details = " / ".join(part for part in (release_year, retail_date, release_label, release_catalogue) if part)
@@ -141,7 +146,7 @@ def _music_confirmation_lines(meta: Meta, missing_warning: str) -> list[tuple[st
         if meta.debug:
             artwork += "; host upload skipped in debug"
     else:
-        artwork = "not found (optional for Orpheus)"
+        artwork = "not found (optional)"
     lines.append(("Artwork", artwork))
 
     sidecars = []

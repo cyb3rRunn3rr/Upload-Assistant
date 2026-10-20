@@ -5,7 +5,13 @@ import json
 from unittest.mock import AsyncMock, patch
 
 from src.meta import Meta
-from upload import _host_music_cover, _is_public_music_cover_url, _music_cover_allowed_hosts
+from upload import _host_music_cover, _is_public_music_cover_url, _music_cover_allowed_hosts, _trackers_host_own_music_cover
+
+
+def test_redacted_hosts_its_own_cover_and_skips_the_shared_image_host():
+    assert _trackers_host_own_music_cover(["REDACTED"]) is True  # noqa: S101
+    assert _trackers_host_own_music_cover(["ORPHEUS"]) is False  # noqa: S101
+    assert _trackers_host_own_music_cover(["REDACTED", "ORPHEUS"]) is False  # noqa: S101
 
 
 def test_music_cover_allowed_hosts_only_constrains_selected_trackers():

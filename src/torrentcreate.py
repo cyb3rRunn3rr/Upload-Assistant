@@ -249,7 +249,8 @@ class TorrentCreator:
                     path = Path(path).parent
 
                 if meta.category not in ("MOVIE", "TV"):
-                    if meta.isdir and len(meta.filelist) == 1 and not meta.keep_folder:
+                    # Music rules require the audio to stay inside a folder, even for one track.
+                    if meta.category != "MUSIC" and meta.isdir and len(meta.filelist) == 1 and not meta.keep_folder:
                         path = meta.filelist[0]
                 elif not meta.is_disc:
                     if meta.keep_folder:

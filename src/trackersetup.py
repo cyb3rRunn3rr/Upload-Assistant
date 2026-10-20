@@ -1112,7 +1112,10 @@ class TrackerSetup:
 
         url = getattr(tracker_instance, "trumping_url", None)
         if not isinstance(url, str):
-            logger.info(f"[red]Tracker {tracker} does not support trumping reports.[/red]")
+            matched = f"{meta.get(f'{tracker}_trumpable_id', '') or meta.get(f'{tracker}_matched_id', '')}"
+            torrent_url = getattr(tracker_instance, "torrent_url", "")
+            link = f" Report it yourself or the new upload can be deleted as a dupe: {torrent_url}{matched}" if matched and isinstance(torrent_url, str) and torrent_url else ""
+            logger.info(f"[red]Tracker {tracker} does not support trumping reports.{link}[/red]")
             return False
 
         reported_torrent_id = f"{meta.get(f'{tracker}_trumpable_id', '')}"

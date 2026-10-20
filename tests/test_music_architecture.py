@@ -387,6 +387,65 @@ def test_featured_track_artists_do_not_turn_a_stable_album_artist_into_a_compila
     assert release.get("artist") == "Lead Artist"
 
 
+def _live_release(titles: list[str], album: str = "Mensageiro do Amor, Pt. 1") -> MusicRelease:
+    release = MusicRelease(root=".")
+    release.set_field("album", album, MetadataSource.FILE_TAG, 1.0)
+    for index, title in enumerate(titles, start=1):
+        release.tracks.append(
+            AudioTrack(
+                path=f"{index}.flac",
+                relative_path=f"{index}.flac",
+                format="FLAC",
+                codec="FLAC",
+                artist="Péricles",
+                album_artist="Péricles",
+                album=album,
+                title=title,
+                track_number=index,
+                tags={"albumartist": ["Péricles"], "artist": ["Péricles"]},
+            )
+        )
+    return release
+
+
+def test_unanimous_ao_vivo_titles_are_a_live_album():
+    titles = [f"Faixa {index} (Ao Vivo)" for index in range(1, 14)]
+    release = _live_release(titles)
+
+    MusicReleaseAnalyzer()._derive_release_type(release)
+
+    assert release.get("release_type") == "Live album"
+    assert release.fields["release_type"].source == MetadataSource.FILE_TAG
+    assert release.fields["release_type"].confidence == 0.9
+
+
+def test_one_live_bonus_and_a_live_word_inside_a_title_stay_an_album():
+    titles = ["Live Forever", "Olive Branch", "Studio Track"] + [f"Faixa {index}" for index in range(4, 8)]
+    titles.append("Encore (Ao Vivo)")
+    release = _live_release(titles, album="Olive")
+
+    MusicReleaseAnalyzer()._derive_release_type(release)
+
+    assert release.get("release_type") == "Album"
+
+
+def test_musicbrainz_live_secondary_type_is_a_live_album():
+    assert MusicBrainzEnricher._release_type({"release-group": {"primary-type": "Album", "secondary-types": ["Live"]}}) == "Live album"
+    assert MusicBrainzEnricher._release_type({"release-group": {"primary-type": "Album"}}) == "Album"
+
+
+def test_musicbrainz_album_primary_does_not_replace_tracks_marked_live():
+    release = _live_release(["Faixa (Ao Vivo)", "Outra (Ao Vivo)"])
+    release.set_field("artist", "Péricles", MetadataSource.FILE_TAG, 1.0)
+    MusicReleaseAnalyzer()._derive_release_type(release)
+    external_album = {"id": "live-group", "release-group": {"primary-type": "Album"}, "date": "2019-10-04"}
+
+    with patch.object(MusicBrainzEnricher, "_find_release", new=AsyncMock(return_value=external_album)):
+        asyncio.run(MusicBrainzEnricher().enrich(release))
+
+    assert release.get("release_type") == "Live album"
+
+
 def test_album_title_containing_ost_letters_is_not_a_soundtrack():
     release = MusicRelease(root=".")
     for index in range(1, 8):
@@ -830,6 +889,48 @@ def test_discogs_catalogue_filter_preserves_hyphens_and_uses_safe_fallbacks():
     assert DiscogsEnricher.filter_releases_by_catalogue(candidates, "B001219802") == candidates
     assert DiscogsEnricher.filter_releases_by_catalogue(candidates, " B0012198-02 ") == [candidates[0]]
     assert DiscogsEnricher.filter_releases_by_catalogue(candidates, "does-not-exist") == candidates
+
+
+def test_phonographic_line_replaces_a_different_store_label():
+    release = MusicRelease(root=".")
+    release.tracks.append(
+        AudioTrack(
+            path="track.flac",
+            relative_path="track.flac",
+            format="FLAC",
+            codec="FLAC",
+            label="Qobuz",
+            tags={"copyright": ["© 2018 Other ℗ 2018 Farias Produções"]},
+        )
+    )
+    release.set_field("release_label", "Qobuz", MetadataSource.FILE_TAG, 0.95)
+
+    MusicReleaseAnalyzer._apply_phonographic_label(release)
+
+    assert release.get("release_label") == "Farias Produções"
+
+
+def test_phonographic_line_fills_a_missing_label_and_ignores_a_quality_folder(tmp_path):
+    release = MusicRelease(root=str(tmp_path))
+    release.tracks.append(
+        AudioTrack(
+            path="track.flac",
+            relative_path="track.flac",
+            format="FLAC",
+            codec="FLAC",
+            date="2018-08-03",
+            tags={"copyright": ["© 2018 Farias Produções ℗ 2018 Farias Produções"]},
+        )
+    )
+
+    MusicReleaseAnalyzer._derive_from_directory(release, "Péricles - Acústico (2018) [FLAC] [24B-48kHz]")
+    MusicReleaseAnalyzer._apply_phonographic_label(release)
+    MusicReleaseAnalyzer._apply_release_date(release)
+
+    assert release.get("release_catalogue_number") == ""
+    assert release.get("edition") == ""
+    assert release.get("release_label") == "Farias Produções"
+    assert release.get("retail_date") == "2018-08-03"
 
 
 def test_directory_catalogue_and_label_are_extracted_from_braced_release_info(tmp_path):

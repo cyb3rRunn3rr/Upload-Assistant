@@ -2764,11 +2764,13 @@ config: dict[str, Any] = {
         },
         "REDACTED": {
             "cli_alias": "RED",
-            # API key from the site settings. Torrents permission is required for upload. Do not commit a real key.
+            # API key from the site settings. Only the Torrents permission is required for upload.
+            # Requests is optional and only used to warn about open requests. Do not commit a real key.
             "api_key": "",
-            # Personal announce URL shown on https://redacted.sh/upload.php. The host is flacsfor.me.
+            # Personal announce URL from the upload page.
             "announce_url": "",
             # One full SoX spectrogram and one zoomed spectrogram per audio file, uploaded to Redacted's image host.
+            # The image host only accepts a logged-in user. Uploads go out three at a time, then wait, so the site does not block them.
             "add_spectrograms": True,
             "inject_delay": 0,
         },

@@ -30,6 +30,15 @@ from src.trackersetup import TrackerSetup
 type StatusDict = dict[str, Any]
 
 
+def record_upload_duration(meta: Meta, tracker: str, started: float) -> None:
+    """Store how long the tracker upload took, without image hosting."""
+    elapsed = time.monotonic() - started
+    image_elapsed = meta.get(f"{tracker}_image_upload_duration")
+    if isinstance(image_elapsed, (int, float)):
+        elapsed -= image_elapsed
+    meta[f"{tracker}_upload_duration"] = max(0.0, elapsed)
+
+
 async def process_trackers(
     meta: Meta,
     config: dict[str, Any],
@@ -226,7 +235,7 @@ async def process_trackers(
                         try:
                             is_uploaded = await tracker_class.upload(meta)
                         finally:
-                            meta[f"{tracker}_upload_duration"] = time.monotonic() - upload_start_time
+                            record_upload_duration(meta, tracker, upload_start_time)
                     except Exception as e:
                         logger.info(f"[red]Upload failed: {escape(str(e))}[/red]")
                         logger.info(traceback.format_exc(), extra={"markup": False})
@@ -267,7 +276,7 @@ async def process_trackers(
                         try:
                             is_uploaded = await tracker_class.upload(meta)
                         finally:
-                            meta[f"{tracker}_upload_duration"] = time.monotonic() - upload_start_time
+                            record_upload_duration(meta, tracker, upload_start_time)
                     except Exception as e:
                         logger.info(f"[red]Upload failed: {escape(str(e))}[/red]")
                         logger.info(traceback.format_exc(), extra={"markup": False})
@@ -343,7 +352,7 @@ async def process_trackers(
                         try:
                             is_uploaded = await ptp.upload(meta, ptp_url, ptp_data)
                         finally:
-                            meta[f"{tracker}_upload_duration"] = time.monotonic() - upload_start_time
+                            record_upload_duration(meta, tracker, upload_start_time)
                     except Exception as e:
                         logger.info(f"[red]Upload failed: {escape(str(e))}[/red]")
                         logger.info(traceback.format_exc(), extra={"markup": False})

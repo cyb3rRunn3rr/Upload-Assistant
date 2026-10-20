@@ -93,7 +93,7 @@ class Orpheus:
     @staticmethod
     def _release(meta: Meta) -> MusicRelease:
         if not isinstance(meta.music_release, dict):
-            raise ValueError("MUSIC analysis is missing; run preparation before using Orpheus.")
+            raise ValueError("MUSIC analysis is missing; run preparation before uploading.")
         return MusicRelease.from_dict(meta.music_release)
 
     @staticmethod
@@ -380,14 +380,14 @@ class Orpheus:
                 "logfiles[]": list(release.auxiliary.logs),
             }
             status = meta.tracker_status.setdefault(self.tracker, {})
-            status["status_message"] = "Debug mode: upload skipped; payload prepared locally. Artwork is optional on Orpheus."
+            status["status_message"] = f"Debug mode: upload skipped; payload prepared locally. Artwork is optional on {self.display_name}."
             status["debug_payload_fields"] = sorted(data)
             status["debug_payload"] = debug_payload
             logger.info(f"{self.tracker}: [yellow]debug mode enabled; POST upload skipped. Prepared payload:[/yellow]")
             logger.info(json.dumps(debug_payload, ensure_ascii=False, indent=2), extra={"markup": False})
             return True
         if not self.api_key or not self.announce_url:
-            meta.tracker_status.setdefault(self.tracker, {})["status_message"] = "Missing Orpheus API key or announce URL."
+            meta.tracker_status.setdefault(self.tracker, {})["status_message"] = f"Missing {self.display_name} API key or announce URL."
             return False
         await self.common.create_torrent_for_upload(meta, self.tracker, self.source_flag, announce_url=self.announce_url)
         torrent_path = Path(meta.base_dir) / "tmp" / str(meta.uuid) / f"[{self.tracker}].torrent"
@@ -417,10 +417,31 @@ class Orpheus:
                             handle.close()
                 response.raise_for_status()
                 payload = response.json()
+        except httpx.HTTPStatusError as error:
+            meta.tracker_status.setdefault(self.tracker, {})["status_message"] = f"Upload request failed: {self._status_error(error)}"
+            return False
         except (httpx.HTTPError, ValueError, OSError) as error:
             meta.tracker_status.setdefault(self.tracker, {})["status_message"] = f"Upload request failed: {error}"
             return False
         return self._record_upload_response(meta, payload)
+
+    def _status_error(self, error: httpx.HTTPStatusError) -> str:
+        """Keep the tracker message and drop the HTTP client essay."""
+        response = error.response
+        detail = ""
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            detail = str(payload.get("error") or "").strip()
+        if not detail:
+            detail = " ".join(re.sub(r"<[^>]+>", " ", response.text).split())
+        for secret in (getattr(self, "api_key", ""), getattr(self, "announce_url", "")):
+            if secret:
+                detail = detail.replace(str(secret), "[hidden]")
+        detail = detail[:240]
+        return f"HTTP {response.status_code}: {detail}" if detail else f"HTTP {response.status_code}"
 
     def _record_upload_response(self, meta: Meta, payload: Any) -> bool:
         """Store the meaningful parts of an Orpheus upload response.

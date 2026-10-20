@@ -1773,6 +1773,7 @@ def _extract_preview_detail_sections(meta_data: Mapping[str, object], music: Map
             "Music Details",
             (
                 ("artist", "Artist", music_value("artist", "artist_source")),
+                ("guests", "Guests", music_value("guests", "guests_source")),
                 ("album", "Album", music_value("album", "album_source")),
                 ("original_year", "Original Year", music_value("original_year", "year_source")),
                 ("release_type", "Release Type", music_value("release_type", "release_type_source")),
@@ -2253,10 +2254,14 @@ def _music_preview_from_meta(meta_data: Mapping[str, object]) -> dict[str, objec
 
     genres_value = field_value("genres", [])
     genres = _string_list_preview_values(genres_value)
+    from src.music.guests import format_guest_artists
+
     artist = text("artists", field_value("artist", meta_data.get("artist", "")))
     return {
         "artist": artist,
         "artist_source": source("artists") or source("artist"),
+        "guests": format_guest_artists(field_value("guest_artists", [])),
+        "guests_source": source("guest_artists"),
         "album": text("album", meta_data.get("title", "")),
         "album_source": source("album"),
         "original_year": text("year", meta_data.get("year", "")),
@@ -2910,11 +2915,12 @@ def _require_auth_for_webui():  # pyright: ignore[reportUnusedFunction]
                     g.username = username
             return None
         # If request accepts HTML (browser), redirect to login; else 401 for API clients
+        # A missing session is not a failed login. Counting it bans the only
+        # address seen behind a container port publish after a few page loads.
+        if _request_header("Authorization"):
+            _handle_failed_auth(client_ip)
         if "text/html" in (_request_header("Accept") or ""):
-            if _request_header("Authorization"):
-                _handle_failed_auth(client_ip)
             return redirect(url_for("login_page"))
-        _handle_failed_auth(client_ip)
         return jsonify({"error": "Authentication required", "success": False}), 401
 
     # For web routes

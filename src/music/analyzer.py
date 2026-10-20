@@ -14,6 +14,7 @@ from typing import Any
 import mutagen
 
 from src.media_extensions import ARTWORK_EXTENSIONS, AUDIO_EXTENSIONS
+from src.music.guests import store_tag_guests
 from src.music.models import AudioTrack, MetadataSource, MusicRelease
 
 LINEAGE_NAMES = ("lineage", "equipment", "transfer", "rip", "source")
@@ -27,6 +28,58 @@ BRACKET_RE = re.compile(r"\[([^\]]+)\]|\{([^\}]+)\}")
 # optional separator before another ``\d+`` creates many equivalent ways to
 # partition a long run of digits and can backtrack exponentially.
 CATALOGUE_RE = re.compile(r"\b(?:[A-Z]{1,8}[- ]?\d{2,}(?:[- ]\d+)*|\d{1,2}[- ]\d{3,}(?:[- ]\d+)*|\d{5,})\b", re.I)
+# A folder token such as ``24B-48kHz`` or ``FLAC 24-96`` is audio quality, not a catalogue number.
+QUALITY_TOKEN_RE = re.compile(
+    r"(?i)^(?:(?:flac|mp3|aac|alac|dsd)\s*[- ]?)?(?:"
+    r"\d{2}\s*[- ]?(?:bit|b)(?:\s*[-/]?\s*(?:44\.1|48|88\.2|96|176\.4|192|352\.8|384)\s*[- ]?k?hz)?"
+    r"|(?:44\.1|48|88\.2|96|176\.4|192|352\.8|384)\s*[- ]?k?hz"
+    r"|\d{2}\s*[-/](?:44\.1|48|88\.2|96|176\.4|192|352\.8|384)"
+    r")$"
+)
+# These brackets name a store or a quality flag. They are not a record label.
+FOLDER_LABEL_DENY = {
+    "qobuz",
+    "tidal",
+    "deezer",
+    "amazon",
+    "itunes",
+    "apple music",
+    "bandcamp",
+    "beatport",
+    "explicit",
+    "hi-res",
+    "hires",
+    "hi res",
+    "lossless",
+}
+_ID3_EASY_KEYS = {
+    "TIT2": "title",
+    "TPE1": "artist",
+    "TPE2": "albumartist",
+    "TALB": "album",
+    "TRCK": "tracknumber",
+    "TPOS": "discnumber",
+    "TDRC": "date",
+    "TYER": "date",
+    "TDOR": "originaldate",
+    "TCON": "genre",
+    "TPUB": "organization",
+    "TCOP": "copyright",
+}
+MEDIA_GUESSES = (
+    ("WEB", re.compile(r"\b(?:WEB|DIGITAL)\b", re.I)),
+    ("CD", re.compile(r"\b(?:CD\d*|EAC)\b", re.I)),
+    ("Vinyl", re.compile(r"\b(?:VINYL|LP)\b", re.I)),
+    ("SACD", re.compile(r"\bSACD\b", re.I)),
+    ("BD", re.compile(r"\b(?:BLU-?RAY|BLURAY)\b", re.I)),
+)
+PHONO_MARK_RE = re.compile(r"(?:℗|\(p\))", re.I)
+PHONO_TAIL_RE = re.compile(r"\s*(?:©|\(c\)|under exclusive license|all rights reserved|,?\s*distributed by).*$", re.I)
+# Store titles mark a performed track with a parenthetical. "Live Forever" and
+# "Olive" are not live albums; the marker has to be the whole bracket.
+_LIVE_WORD = r"live|ao vivo|en vivo|dal vivo|en direct(?:e)?"
+LIVE_ALBUM_RE = re.compile(rf"\b(?:{_LIVE_WORD})\b", re.I)
+LIVE_TRACK_RE = re.compile(rf"[([]\s*(?:{_LIVE_WORD})\s*[])]\s*$", re.I)
 
 
 def _clean(value: Any) -> str:
@@ -79,15 +132,51 @@ def _number(value: str) -> int | None:
     return int(match.group()) if match else None
 
 
-def _format_for(path: Path, audio: Any) -> tuple[str, str]:
+def _frame_text(item: Any) -> str:
+    text = getattr(item, "text", None)
+    if isinstance(text, list):
+        return _clean(" ".join(str(part) for part in text))
+    if text:
+        return _clean(text)
+    return _clean(item)
+
+
+def _absorb_tag(tags: dict[str, list[str]], key: Any, value: Any) -> None:
+    """Store one tag, mapping raw ID3 frames onto the easy names."""
+    text = _frame_text(value)
+    if not text:
+        return
+    frame = str(key)
+    desc = str(getattr(value, "desc", "") or "")
+    if frame.startswith("TXXX") and desc:
+        values = tags.setdefault(desc, [])
+        if text not in values:
+            values.append(text)
+    easy = _ID3_EASY_KEYS.get(frame.split(":", 1)[0])
+    name = easy or frame
+    values = tags.setdefault(name, [])
+    if text not in values:
+        values.append(text)
+
+
+def _format_for(path: Path, audio: Any, codec_hint: str = "") -> tuple[str, str]:
     ext = path.suffix.lower()
     class_name = audio.__class__.__name__.lower()
+    hint = codec_hint.casefold()
     if ext == ".flac" or "flac" in class_name:
         return "FLAC", "FLAC"
     if ext == ".mp3" or "mp3" in class_name:
         return "MP3", "MP3"
     if ext in {".m4a", ".aac"} or "mp4" in class_name or "aac" in class_name:
+        if hint.startswith("alac"):
+            return "ALAC", "ALAC"
+        if hint.startswith("drms") or hint.startswith("drmi"):
+            return "DRM", "DRM"
+        if "ac-3" in hint or hint.startswith("ac3"):
+            return "AC3", "AC-3"
         return "AAC", "AAC"
+    if ext in {".dsf", ".dff"} or "dsf" in class_name or "dff" in class_name:
+        return "DSD", "DSD"
     if ext == ".ogg" or "vorbis" in class_name:
         return "Ogg Vorbis", "Vorbis"
     if ext == ".ac3":
@@ -125,8 +214,13 @@ class MusicReleaseAnalyzer:
         for file in files:
             if file.suffix.lower() in AUDIO_EXTENSIONS:
                 track = self._read_track(file, root)
+                if track is None and file.suffix.lower() in {".dsf", ".dff"}:
+                    track = self._unread_dsd_track(file, root)
                 if track:
                     release.tracks.append(track)
+                else:
+                    # A suffix we claim to read, but could not, must not vanish into the torrent.
+                    release.auxiliary.other.append(str(file.relative_to(root)))
             else:
                 self._classify_auxiliary(release, file, root)
 
@@ -137,7 +231,7 @@ class MusicReleaseAnalyzer:
         try:
             audio = mutagen.File(path, easy=True)
             technical = mutagen.File(path)
-        except mutagen.MutagenError, OSError:
+        except (mutagen.MutagenError, OSError):
             return None
         if audio is None and technical is None:
             return None
@@ -147,10 +241,20 @@ class MusicReleaseAnalyzer:
         tags: dict[str, list[str]] = {}
         for key, value in (getattr(audio, "tags", None) or {}).items():
             values = value if isinstance(value, list) else [value]
-            tags[str(key)] = [_clean(item) for item in values if _clean(item)]
+            for item in values:
+                _absorb_tag(tags, key, item)
+        # Easy mode does not wrap DSF or DSDIFF, so the raw ID3 frames are copied above.
+        # MP3 easy mode also drops freeform TXXX frames such as MQAENCODER.
+        if technical is not None and technical is not audio:
+            raw_tags = getattr(technical, "tags", None)
+            if raw_tags is not None and hasattr(raw_tags, "items"):
+                for key, value in raw_tags.items():
+                    values = value if isinstance(value, list) else [value]
+                    for item in values:
+                        _absorb_tag(tags, key, item)
 
         info = getattr(technical or source, "info", None)
-        format_name, codec = _format_for(path, source)
+        format_name, codec = _format_for(path, source, str(getattr(info, "codec", "") or ""))
         tagged_disc = _number(_first(tags, "discnumber", "disknumber", "disc"))
         folder_disc = self._disc_from_path(path, root)
         # Release tags are frequently copied wholesale to bonus discs.  A clear
@@ -163,6 +267,8 @@ class MusicReleaseAnalyzer:
             codec=codec,
             bitrate=getattr(info, "bitrate", None),
             bitrate_mode=_bitrate_mode(info),
+            encoder_settings=str(getattr(info, "encoder_settings", "") or ""),
+            embedded_bytes=self._embedded_bytes(technical),
             bit_depth=getattr(info, "bits_per_sample", None),
             sample_rate=getattr(info, "sample_rate", None),
             channels=getattr(info, "channels", None),
@@ -180,6 +286,64 @@ class MusicReleaseAnalyzer:
             isrc=_first(tags, "isrc"),
             tags=tags,
         )
+
+    def _unread_dsd_track(self, path: Path, root: Path) -> AudioTrack:
+        """Keep a DSD file when mutagen cannot open it, usually DFF."""
+        rate = self._dff_sample_rate(path) if path.suffix.lower() == ".dff" else None
+        return AudioTrack(
+            path=str(path.resolve()),
+            relative_path=str(path.relative_to(root)),
+            format="DSD",
+            codec="DSD",
+            bit_depth=1,
+            sample_rate=rate,
+            channels=2,
+        )
+
+    @staticmethod
+    def _dff_sample_rate(path: Path) -> int | None:
+        try:
+            header = path.read_bytes()[:65_536]
+        except OSError:
+            return None
+        marker = b"FS  "
+        index = header.find(marker)
+        if index < 0 or index + 16 > len(header):
+            return None
+        size = int.from_bytes(header[index + 4 : index + 12], "big")
+        if size < 4:
+            return None
+        rate = int.from_bytes(header[index + 12 : index + 16], "big")
+        return rate if 1_000_000 <= rate <= 50_000_000 else None
+
+    @staticmethod
+    def _embedded_bytes(technical: Any) -> int:
+        """Sum embedded pictures and FLAC padding. Rule 2.3.19 allows 1024 KiB."""
+        if technical is None:
+            return 0
+        total = 0
+        for picture in getattr(technical, "pictures", []) or []:
+            total += len(getattr(picture, "data", b"") or b"")
+        for block in getattr(technical, "metadata_blocks", []) or []:
+            if type(block).__name__ == "Padding":
+                total += int(getattr(block, "length", 0) or 0)
+        tags = getattr(technical, "tags", None)
+        getter = getattr(tags, "getall", None)
+        if callable(getter):
+            for frame in getter("APIC"):
+                total += len(getattr(frame, "data", b"") or b"")
+        if tags is not None and hasattr(tags, "get"):
+            try:
+                covers = tags.get("covr")
+            except (TypeError, KeyError):
+                covers = None
+            if isinstance(covers, list):
+                for cover in covers:
+                    try:
+                        total += len(bytes(cover))
+                    except (TypeError, ValueError):
+                        continue
+        return total
 
     def _classify_auxiliary(self, release: MusicRelease, path: Path, root: Path) -> None:
         relative = str(path.relative_to(root))
@@ -219,16 +383,26 @@ class MusicReleaseAnalyzer:
         # audio DATE tags normally identify the particular release in hand.
         self._derive_from_directory(release, folder_name)
         self._set_artists(release)
+        store_tag_guests(release)
         self._set_consensus(release, "album", [self._clean_album_tag(track.album) for track in release.tracks], MetadataSource.FILE_TAG, 1.0)
         tag_years = [track.date[:4] for track in release.tracks if re.fullmatch(r"(?:19|20)\d{2}.*", track.date)]
+        original_years = [
+            _first(track.tags, "originaldate", "originalyear")[:4]
+            for track in release.tracks
+            if re.fullmatch(r"(?:19|20)\d{2}.*", _first(track.tags, "originaldate", "originalyear"))
+        ]
         directory_year = release.get("year") if release.fields.get("year", None) and release.fields["year"].source == MetadataSource.DIRECTORY else ""
         # When the path explicitly identifies an edition but does not supply a
         # leading original year (for example, ``Coda [2015 Deluxe Edition]``),
         # the tag DATE is the release/edition date, not reliable evidence for
         # the album group's initial year.  Leave ``year`` absent so the normal
         # MUSIC prompt asks for the required original year.
+        # A unanimous ORIGINALDATE is the group year. DATE stays the release year.
         if not directory_year and not (release.get("edition") or release.get("edition_year")):
-            self._set_consensus(release, "year", tag_years, MetadataSource.FILE_TAG, 1.0)
+            if len(original_years) == len(release.tracks) and len(set(original_years)) == 1:
+                release.set_field("year", original_years[0], MetadataSource.FILE_TAG, 1.0)
+            else:
+                self._set_consensus(release, "year", tag_years, MetadataSource.FILE_TAG, 1.0)
         # A date, imprint and catalogue number identify a *release*.  Per the
         # Orpheus edition guidelines, none establishes a distinct edition by
         # itself; only explicit edition information belongs in ``edition_*``.
@@ -239,6 +413,8 @@ class MusicReleaseAnalyzer:
         # the Orpheus adapter; tracker mapping uses the explicit release names.
         self._set_consensus(release, "label", [track.label for track in release.tracks], MetadataSource.FILE_TAG, 0.95)
         self._set_consensus(release, "catalogue_number", [track.catalogue_number for track in release.tracks], MetadataSource.FILE_TAG, 0.95)
+        self._apply_phonographic_label(release)
+        self._apply_release_date(release)
         genres = sorted({genre for track in release.tracks for genre in track.genre if genre})
         release.set_field("genres", genres, MetadataSource.FILE_TAG, 0.8)
         release.set_field("format", ", ".join(sorted(release.formats)), MetadataSource.INFERRED, 1.0)
@@ -415,9 +591,8 @@ class MusicReleaseAnalyzer:
             if match:
                 release.set_field("artist", match.group(1).strip(), MetadataSource.DIRECTORY, 0.55)
                 release.set_field("album", match.group(2).strip(), MetadataSource.DIRECTORY, 0.55)
-        upper = normalized.upper()
-        for media, markers in {"WEB": ("WEB", "DIGITAL"), "CD": (" CD", "CD-", "EAC"), "Vinyl": ("VINYL", "LP"), "SACD": ("SACD",), "BD": ("BLURAY", "BLU-RAY")}.items():
-            if any(marker in upper for marker in markers):
+        for media, pattern in MEDIA_GUESSES:
+            if pattern.search(normalized):
                 release.set_field("media", media, MetadataSource.DIRECTORY, 0.45)
                 break
         edition_with_year = EDITION_WITH_YEAR_RE.search(normalized)
@@ -460,7 +635,7 @@ class MusicReleaseAnalyzer:
                     release.set_field("release_year", year_match.group(1), MetadataSource.DIRECTORY, 0.95)
                 edition_bracket_indexes.add(index)
         for index, detail in enumerate(brackets):
-            if index in edition_bracket_indexes:
+            if index in edition_bracket_indexes or QUALITY_TOKEN_RE.fullmatch(detail.replace(" ", "")):
                 continue
             if CATALOGUE_RE.fullmatch(detail):
                 release.set_field("release_catalogue_number", detail, MetadataSource.DIRECTORY, 0.65)
@@ -479,8 +654,48 @@ class MusicReleaseAnalyzer:
                     release.set_field("release_label", label, MetadataSource.DIRECTORY, 0.6)
                 continue
             upper_detail = detail.upper()
+            if detail.casefold() in FOLDER_LABEL_DENY:
+                continue
             if not any(marker in upper_detail for marker in (*source_markers, *format_markers, *edition_markers_upper)) and re.search(r"[A-Za-z]", detail):
                 release.set_field("release_label", detail, MetadataSource.DIRECTORY, 0.6)
+
+    @staticmethod
+    def _phonographic_label(copyright: str) -> str:
+        """Return the name after the phonographic mark, ignoring the store label."""
+        text = copyright.replace("\u2117", "℗")
+        match = PHONO_MARK_RE.search(text)
+        if not match:
+            return ""
+        name = PHONO_TAIL_RE.sub("", text[match.end() :]).strip(" .,-/")
+        name = re.sub(r"^(?:(?:19|20)\d{2}\s+)+", "", name).strip(" .,-/")
+        return name if re.search(r"[A-Za-z]", name) else ""
+
+    @classmethod
+    def _apply_phonographic_label(cls, release: MusicRelease) -> None:
+        """Prefer the phonographic line when it differs from the label tag."""
+        found = [cls._phonographic_label(_first(track.tags, "copyright")) for track in release.tracks]
+        found = [label for label in found if label]
+        if not found:
+            return
+        selected, _count = Counter(found).most_common(1)[0]
+        if any(cls._label_key(label) != cls._label_key(selected) for label in found):
+            release.warnings.append("Phonographic lines name more than one label.")
+            return
+        current = str(release.get("release_label") or "")
+        if current and cls._label_key(current) == cls._label_key(selected):
+            return
+        release.set_field("release_label", selected, MetadataSource.FILE_TAG, 0.97)
+        release.set_field("label", selected, MetadataSource.FILE_TAG, 0.97)
+
+    @staticmethod
+    def _apply_release_date(release: MusicRelease) -> None:
+        dates = [match.group(1) for track in release.tracks if (match := re.match(r"((?:19|20)\d{2}-\d{2}-\d{2})", track.date))]
+        if dates and len(dates) == len(release.tracks) and len(set(dates)) == 1:
+            release.set_field("retail_date", dates[0], MetadataSource.FILE_TAG, 0.85)
+
+    @staticmethod
+    def _label_key(value: str) -> str:
+        return re.sub(r"\s+", " ", value).strip().casefold()
 
     @staticmethod
     def _infer_media_from_logs(release: MusicRelease) -> None:
@@ -526,9 +741,15 @@ class MusicReleaseAnalyzer:
         # ``OST`` and ``live`` are release-type markers only as standalone
         # words.  A substring check would classify titles such as
         # ``NOSTALGIA`` as a soundtrack or ``Olive`` as a live album.
+        # A studio album can contain one live bonus.  Every remaining track
+        # has to carry the same performed-live marker before the release does.
+        album_live = bool(LIVE_ALBUM_RE.search(album))
+        unanimous_live = count >= 2 and all(LIVE_TRACK_RE.search(track.title or "") for track in release.tracks)
+        single_performer = len(track_artists) == 1 and not has_explicit_various_artists
+        live_from_tracks = unanimous_live and not explicit_compilation and (has_stable_album_artist or single_performer)
         if "soundtrack" in album or re.search(r"(?:^|[^\w])ost(?:$|[^\w])", album):
             value = "Soundtrack"
-        elif re.search(r"\blive\b", album):
+        elif album_live or live_from_tracks:
             value = "Live album"
         elif explicit_compilation or has_explicit_various_artists or len(album_artist_credits) > 1 or inferred_from_tracks:
             value = "Compilation"
@@ -553,4 +774,12 @@ class MusicReleaseAnalyzer:
             value = "EP"
         else:
             value = "Album"
-        release.set_field("release_type", value, MetadataSource.INFERRED, 0.65)
+        # Track titles are file evidence.  Keep them ahead of a MusicBrainz
+        # primary type of Album, which is what that database stores for a live
+        # release when the Live flag is only a secondary type.
+        if value == "Live album" and live_from_tracks:
+            release.set_field("release_type", value, MetadataSource.FILE_TAG, 0.9)
+        elif value == "Live album":
+            release.set_field("release_type", value, MetadataSource.INFERRED, 0.8)
+        else:
+            release.set_field("release_type", value, MetadataSource.INFERRED, 0.65)

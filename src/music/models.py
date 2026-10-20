@@ -53,6 +53,8 @@ class AudioTrack:
     catalogue_number: str = ""
     genre: list[str] = field(default_factory=list)
     isrc: str = ""
+    encoder_settings: str = ""
+    embedded_bytes: int = 0
     tags: dict[str, list[str]] = field(default_factory=dict)
 
 

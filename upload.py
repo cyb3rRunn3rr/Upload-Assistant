@@ -840,6 +840,18 @@ async def _write_music_snapshot(meta: Meta) -> None:
         await file.write(json.dumps(meta.music_release, indent=2, cls=PathAwareEncoder))
 
 
+def _trackers_host_own_music_cover(trackers: Iterable[Any]) -> bool:
+    """True when every selected tracker uploads the cover itself."""
+    names = [str(tracker).strip().upper() for tracker in trackers if str(tracker).strip()]
+    if not names:
+        return False
+    for name in names:
+        tracker_class = tracker_class_map.get(name)
+        if tracker_class is None or not getattr(tracker_class, "hosts_own_music_cover", False):
+            return False
+    return True
+
+
 def _music_cover_allowed_hosts(trackers: Iterable[Any]) -> list[str] | None:
     """Return the hosts accepted by every selected tracker with a host policy."""
     approved_hosts: set[str] | None = None
@@ -1578,11 +1590,14 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
             if "image_list" not in meta:
                 meta.image_list = []
             if meta.category == "MUSIC":
-                allowed_hosts = _music_cover_allowed_hosts(cast(list[Any], meta.trackers))
-                if allowed_hosts == []:
-                    logger.warning("[yellow]MUSIC: no image host is approved by all selected trackers.[/yellow]")
-                    return False
-                await _host_music_cover(meta, uploadscreens_manager, allowed_hosts)
+                if _trackers_host_own_music_cover(cast(list[Any], meta.trackers)):
+                    logger.info("[cyan]MUSIC: the selected trackers host the cover themselves.[/cyan]")
+                else:
+                    allowed_hosts = _music_cover_allowed_hosts(cast(list[Any], meta.trackers))
+                    if allowed_hosts == []:
+                        logger.warning("[yellow]MUSIC: no image host is approved by all selected trackers.[/yellow]")
+                        return False
+                    await _host_music_cover(meta, uploadscreens_manager, allowed_hosts)
             manual_frames_str = meta.manual_frames
             if isinstance(manual_frames_str, str):
                 manual_frames_list = [f.strip() for f in manual_frames_str.split(",") if f.strip()]

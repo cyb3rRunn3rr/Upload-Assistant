@@ -191,8 +191,16 @@ class MusicBrainzEnricher:
 
     @staticmethod
     def _release_type(result: dict[str, Any]) -> str:
-        types = result.get("release-group", {}).get("primary-type", "")
-        return str(types).title() if types else ""
+        group = result.get("release-group")
+        if not isinstance(group, dict):
+            return ""
+        secondary = group.get("secondary-types", group.get("secondary-type", []))
+        if isinstance(secondary, str):
+            secondary = [secondary]
+        if any(str(item).strip().casefold() == "live" for item in secondary):
+            return "Live album"
+        primary = str(group.get("primary-type", "")).strip()
+        return primary.title() if primary else ""
 
     @staticmethod
     def _label(result: dict[str, Any]) -> str:
