@@ -127,6 +127,25 @@ def _split_main_artists(values: list[str]) -> list[str]:
     return artists
 
 
+def _split_joint_credit(release: MusicRelease, artists: list[str]) -> list[str]:
+    """Split ``A, B, C`` only when a track artist tag names one of the parts.
+
+    A comma alone is not enough: ``Tyler, The Creator`` is one
+    artist, and its tracks carry the whole name.  A live album credited to
+    ``Péricles, Chrigor, Leandro Lehart`` whose tracks say ``Péricles`` is
+    three artists.  The ``artist`` text keeps the credit as written.
+    """
+    if len(artists) != 1 or "," not in artists[0]:
+        return []
+    parts = [part for part in (_clean(item) for item in re.split(r"\s*,\s*|\s+&\s+", artists[0])) if part]
+    if len(parts) < 2:
+        return []
+    track_artists = {value.casefold() for track in release.tracks for value in _values(track.tags, "artist", "performer") or [track.artist] if value}
+    if not any(part.casefold() in track_artists for part in parts):
+        return []
+    return list(dict.fromkeys(parts))
+
+
 def _number(value: str) -> int | None:
     match = re.search(r"\d+", value or "")
     return int(match.group()) if match else None
@@ -557,7 +576,8 @@ class MusicReleaseAnalyzer:
             return
         selected, count = Counter(per_track).most_common(1)[0]
         artists = list(selected)
-        release.set_field("artists", artists, MetadataSource.FILE_TAG, count / len(per_track))
+        joint = _split_joint_credit(release, artists)
+        release.set_field("artists", joint or artists, MetadataSource.FILE_TAG, count / len(per_track))
         release.set_field("artist", " & ".join(artists), MetadataSource.FILE_TAG, count / len(per_track))
         unique = sorted({" & ".join(item) for item in per_track})
         if len(unique) > 1:

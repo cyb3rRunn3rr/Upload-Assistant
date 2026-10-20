@@ -127,7 +127,7 @@ def choose_qobuz_url(results: list[tuple[str, str]], artist: str, album: str) ->
 
 def guests_from_tags(release: MusicRelease) -> list[dict[str, Any]]:
     """Featured names already written in a track artist or title tag."""
-    mains = {fold_name(name) for name in _main_names(release)}
+    mains = _main_keys(release)
     found: list[dict[str, Any]] = []
     for track in release.tracks:
         values = _tag_values(track.tags, "artist", "performer")
@@ -160,7 +160,7 @@ def credits_for_release(release: MusicRelease, remote_tracks: list[dict[str, Any
             remote[key] = featured
     if not local or len([key for key, _number in local if key in remote]) * 2 < len(local):
         return []
-    mains = {fold_name(name) for name in _main_names(release)}
+    mains = _main_keys(release)
     found: list[dict[str, Any]] = []
     for key, number in local:
         _add_guests(found, remote.get(key, []), number, mains)
@@ -385,6 +385,20 @@ def _main_names(release: MusicRelease) -> list[str]:
         return names
     artist = str(release.get("artist") or "").strip()
     return [artist] if artist else []
+
+
+def _main_keys(release: MusicRelease) -> set[str]:
+    """Main artists, plus each name in a joint credit such as ``A, B & C``.
+
+    The album artist tag can hold the whole collaboration as one string. A
+    track tag that names one of those artists is still a main artist.
+    """
+    keys: set[str] = set()
+    for name in _main_names(release):
+        keys.add(fold_name(name))
+        keys.update(fold_name(part) for part in re.split(r"\s*,\s*|\s+&\s+", name))
+    keys.discard("")
+    return keys
 
 
 def _tag_values(tags: dict[str, list[str]], *keys: str) -> list[str]:

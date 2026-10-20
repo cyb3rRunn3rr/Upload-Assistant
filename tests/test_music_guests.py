@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from src.meta import Meta
+from src.music.analyzer import MusicReleaseAnalyzer
+from src.music.guests import _choose_deezer_album as choose_deezer_album
 from src.music.guests import (
     choose_qobuz_url,
     credits_for_release,
@@ -13,7 +15,6 @@ from src.music.guests import (
     qobuz_album_id,
     store_tag_guests,
 )
-from src.music.guests import _choose_deezer_album as choose_deezer_album
 from src.music.models import AudioTrack, MetadataSource, MusicRelease
 from src.trackers.GAZELLE.redacted import Redacted
 from src.uphelper import _music_confirmation_lines
@@ -95,9 +96,7 @@ def test_deezer_album_must_match_the_track_count() -> None:
 
 def test_a_thin_title_match_does_not_import_guests() -> None:
     release = _release()
-    release.tracks.append(
-        AudioTrack(path="2.flac", relative_path="2.flac", format="FLAC", codec="FLAC", title="Já Tava Bom", track_number=2, tags={"artist": ["Péricles"]})
-    )
+    release.tracks.append(AudioTrack(path="2.flac", relative_path="2.flac", format="FLAC", codec="FLAC", title="Já Tava Bom", track_number=2, tags={"artist": ["Péricles"]}))
     remote = [{"title": "Homem Invisível", "featured": ["Projota"]}]
 
     assert credits_for_release(release, remote) == []  # noqa: S101
@@ -135,3 +134,49 @@ def test_confirmation_shows_the_guest_track() -> None:
     assert format_guest_artists(release.get("guest_artists")) == "Projota (15)"  # noqa: S101
     assert "Projota (15)" in lines["Guests"]  # noqa: S101
     assert "external metadata" in lines["Guests"]  # noqa: S101
+
+
+def test_a_name_from_a_joint_album_artist_is_not_a_guest() -> None:
+    release = _release()
+    release.set_field("artist", "Péricles, Chrigor, Leandro Lehart", MetadataSource.FILE_TAG, 1.0, force=True)
+    release.set_field("artists", ["Péricles, Chrigor, Leandro Lehart"], MetadataSource.FILE_TAG, 1.0, force=True)
+
+    assert guests_from_tags(release) == []  # noqa: S101
+    assert credits_for_release(release, [{"title": "Homem Invisível", "featured": ["Chrigor"]}, {"title": "Na Broderagem", "featured": []}]) == []  # noqa: S101
+
+
+def _joint_release(track_artist: str, album_artist: str) -> MusicRelease:
+    release = MusicRelease(root=".")
+    for number in (1, 2):
+        release.tracks.append(
+            AudioTrack(
+                path=f"{number}.flac",
+                relative_path=f"{number}.flac",
+                format="FLAC",
+                codec="FLAC",
+                title=f"Track {number}",
+                artist=track_artist,
+                album_artist=album_artist,
+                track_number=number,
+                tags={"artist": [track_artist], "albumartist": [album_artist]},
+            )
+        )
+    return release
+
+
+def test_a_joint_album_artist_splits_when_a_track_names_one_part() -> None:
+    release = _joint_release("Péricles", "Péricles, Chrigor, Leandro Lehart")
+
+    MusicReleaseAnalyzer._set_artists(release)
+
+    assert release.get("artists") == ["Péricles", "Chrigor", "Leandro Lehart"]  # noqa: S101
+    assert release.get("artist") == "Péricles, Chrigor, Leandro Lehart"  # noqa: S101
+    assert guests_from_tags(release) == []  # noqa: S101
+
+
+def test_a_comma_band_name_stays_one_artist() -> None:
+    release = _joint_release("Tyler, The Creator", "Tyler, The Creator")
+
+    MusicReleaseAnalyzer._set_artists(release)
+
+    assert release.get("artists") == ["Tyler, The Creator"]  # noqa: S101
